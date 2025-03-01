@@ -1,0 +1,205 @@
+## **Step 1: Set Up the Vulnerable (Legacy) Repository**
+
+1. **Create a Working Directory and Initialize Git:**
+   ```
+   mkdir vulnerable-app
+   cd vulnerable-app
+   git init
+   ```
+
+2. **Create the Vulnerable Code File (vulnerable.c):**
+   ```c
+   // vulnerable.c – Vulnerable Version (Legacy)
+   #include <stdio.h>
+   #include <stdlib.h>
+
+   void vulnerable_function() {
+       int *ptr = malloc(sizeof(int) * 10);
+       if (ptr == NULL) {
+           perror("malloc failed");
+           exit(1);
+       }
+       ptr[0] = 42;
+       printf("Value before free: %d\n", ptr[0]);
+
+       free(ptr);
+       // BUG: Accessing freed memory causes use-after-free error
+       printf("Value after free: %d\n", ptr[0]);
+   }
+
+   int main(void) {
+       vulnerable_function();
+       return 0;
+   }
+   ```
+
+3. **Commit the Vulnerable Code:**
+   ```bash
+   git add vulnerable.c
+   git commit -m "Initial commit: Vulnerable version with use-after-free bug"
+   ```
+
+---
+
+## **Step 2: Create the Fixed Version (Upstream Branch)**
+
+1. **Create a New Branch for the Fix:**
+   ```bash
+   git checkout -b fixed-version
+   ```
+
+2. **Modify the Code to Fix the Bug (Edit vulnerable.c):**
+   ```c
+   // vulnerable.c – Fixed Version
+   #include <stdio.h>
+   #include <stdlib.h>
+
+   void fixed_function() {
+       int *ptr = malloc(sizeof(int) * 10);
+       if (ptr == NULL) {
+           perror("malloc failed");
+           exit(1);
+       }
+       ptr[0] = 42;
+       printf("Value before free: %d\n", ptr[0]);
+
+       free(ptr);
+       ptr = NULL;  // Fix: reset pointer after freeing memory
+       printf("Memory freed and pointer reset.\n");
+   }
+
+   int main(void) {
+       fixed_function();
+       return 0;
+   }
+   ```
+
+3. **Commit the Fix:**
+   ```bash
+   git add vulnerable.c
+   git commit -m "Fix use-after-free bug by resetting pointer after free"
+   ```
+
+---
+
+## **Step 3: Backport the Fix to the Legacy Branch**
+
+1. **Switch Back to the Legacy Branch (e.g., master):**
+   ```bash
+   git checkout master
+   ```
+
+2. **Cherry-Pick the Fix Commit:**  
+   (Find the commit hash from the `fixed-version` branch; assume it is `abc1234`.)
+   ```bash
+   git cherry-pick abc1234
+   ```
+   - **Resolve Conflicts:**  
+     If conflicts occur, open the affected files, resolve the differences, then continue the cherry-pick:
+     ```bash
+     git add <resolved_file>
+     git cherry-pick --continue
+     ```
+
+3. **Verify the Code:**  
+   Ensure that `vulnerable.c` now contains the fixed code.
+
+---
+
+## **Step 4: Package the Legacy Repository into a Tarball**
+
+1. **Ensure the Source Directory is Structured Correctly:**  
+   Your tarball should contain a top-level directory named exactly `vulnerable-app-1.0`.
+
+   ```bash
+   cd ..
+   mkdir vulnerable-app-1.0
+   cp -r vulnerable-app/* vulnerable-app-1.0/
+   ```
+
+2. **Create the Tarball:**
+   ```bash
+   tar czvf vulnerable-app-1.0.tar.gz vulnerable-app-1.0/
+   ```
+
+3. **Move the Tarball to the RPM SOURCES Directory:**
+   ```bash
+   mv vulnerable-app-1.0.tar.gz ~/rpmbuild/SOURCES/
+   ```
+
+---
+
+## **Step 5: Create an RPM Spec File**
+
+Create a file named `vulnerable-app.spec` in `~/rpmbuild/SPECS/` with the following content:
+
+```spec
+Name:           vulnerable-app
+Version:        1.0
+Release:        1%{?dist}
+Summary:        Demo application with a fixed use-after-free vulnerability
+
+License:        MIT
+URL:            http://example.com
+Source0:        vulnerable-app-1.0.tar.gz
+
+BuildRequires:  gcc
+
+%description
+A demo app that originally had a use-after-free bug. The fix has been backported to secure legacy systems.
+
+%prep
+%setup -q
+
+%build
+gcc -o vulnerable-app vulnerable.c
+
+%install
+mkdir -p %{buildroot}/usr/bin
+install -m 0755 vulnerable-app %{buildroot}/usr/bin/vulnerable-app
+
+%files
+/usr/bin/vulnerable-app
+
+%changelog
+* Sun Feb 09 2025 Your Name <you@example.com> - 1.0-1
+- Initial RPM build for vulnerable-app demo
+```
+
+*Tip:* If you don’t need a debug package, you can disable it by adding:
+```spec
+%define debug_package %{nil}
+```
+at the top of the spec file.
+
+---
+
+## **Step 6: Build the RPM Package**
+
+1. **Build the RPM:**
+   ```bash
+   rpmbuild -ba ~/rpmbuild/SPECS/vulnerable-app.spec
+   ```
+   - Watch the output for any errors. If there’s a “No such file or directory” error, verify the tarball structure.
+
+---
+
+## **Step 7: Install and Test the RPM Package**
+
+1. **Install the RPM Package:**
+   ```bash
+   sudo rpm -ivh ~/rpmbuild/RPMS/x86_64/vulnerable-app-1.0-1.x86_64.rpm
+   ```
+
+2. **Run the Application:**
+   ```bash
+   /usr/bin/vulnerable-app
+   ```
+
+3. **Expected Output:**
+   - It should print:
+     ```
+     Value before free: 42
+     Memory freed and pointer reset.
+     ```
+   - This confirms that the backported fix is in effect and the vulnerability is resolved.
